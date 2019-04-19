@@ -10,14 +10,16 @@ import argparse
 
 class youTubeHarvester():
 
-    def __init__(self, url, skipTime, imgDir):        
+    def __init__(self, url, skipTime, imgDir, verbose):        
         video = pafy.new(url)
+        if verbose:
+            print('Video loaded: %s' % video.title)
         self.videoId = str.split(url, "=")[1] + "_"
         best = video.getbest()
         self.url = best.url
         self.skipTime = int(skipTime)*1000
         self.imgDir = imgDir
-        print(self.imgDir)
+        self.verbose = verbose
 
         self.recordTime = 0
         self.harvesting = False
@@ -29,9 +31,12 @@ class youTubeHarvester():
 
     def harvestVideo(self):
         try:
-            os.mkdir(imgDir)
-        except:
-            pass
+            os.mkdir(self.imgDir)
+            if self.verbose:
+                print('Created Directory: %s' % self.imgDir)
+        except FileExistsError:
+            if self.verbose:
+                print('Directory: %s already exists' % self.imgDir)
 
         Instance = vlc.Instance()
         player = Instance.media_player_new()
@@ -41,22 +46,29 @@ class youTubeHarvester():
         Media.get_mrl()
         player.set_media(Media)
         player.play()
-        time.sleep(5) # wait till the window appears
+        time.sleep(.5) # wait till the window appears
         player.pause()
         self.harvesting = True
 
-        while(player.get_time() < player.get_length()):
+        if self.verbose:
+            print("Begin Harvesting...")
+        while(player.get_time() < player.get_length()):            
             self.waitForBuffer = True
-            path = self.imgDir + self.videoId + str(player.get_time() )
-            print("image will be taken at " + str(player.get_time() ) + "ms at path "+ path )   
-            time.sleep(0.5)
             self.recordTime = player.get_time()
-            player.video_take_snapshot(0,  self.imgDir + self.videoId + str(self.recordTime) ,i_width=player.video_get_width(), i_height=player.video_get_height())
+            filename = '{}{}_{}'.format(self.imgDir, self.videoId, str(self.recordTime))
+            player.video_take_snapshot(0, filename ,i_width=player.video_get_width(), i_height=player.video_get_height())
+            if self.verbose:
+                print('image saved to: %s\t\t' % filename)
             player.set_time(self.recordTime + self.skipTime)
 
             while(self.waitForBuffer):
-                print("waiting for buffering")
+                if self.verbose:
+                    print(".", end="")
                 time.sleep(0.1)
+            time.sleep(0.5)
+
+        if self.verbose:
+            print("Harvesting complete\n\n")
 
     def reNameFiles(self):
         for f in os.listdir(self.imgDir):
@@ -64,25 +76,30 @@ class youTubeHarvester():
                 s = f.split('.')
                 if len(s) > 1:
                     if s[1] == "jpeg":
-                        os.rename(self.imgDir + s[0], self.imgDir + s[0] + ".jpg")
+                        filename = self.imgDir + s[0]
+                        newname =  self.imgDir + s[0] + ".jpg"
+                        os.rename(filename, newname)
                     else:
                         print("file: %s is of another extention, please convert." % f)
+                        continue
                 else:
-                    os.rename(self.imgDir + f, self.imgDir + f + ".jpg")
+                    filename = self.imgDir + s[0]
+                    newname =  self.imgDir + s[0] + ".jpg"
+
+            os.rename(filename, newname)
+            if self.verbose:
+                print("file: {}\trenamed to: {}".format(self.imgDir + s[0], self.imgDir + s[0]))
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-u', type=str, help="YouTube url for video to harvest from")
-    parser.add_argument('-s', type=int, help="time interval in seconds to harvest screenshot. Default 10")
-    parser.add_argument('-o', type=str, help="folder to output image files. Default images/")
-    parser.add_argument('-r', action='store_true', help="rename files to .jpg after finishing")
+    parser.add_argument('-u', type=str, required=True, help="YouTube url for video to harvest from")
+    parser.add_argument('-s', type=int, default=10, help="time interval in seconds to harvest screenshot. Default 10")
+    parser.add_argument('-o', type=str, default='images/', help="folder to output image files. Default images/")
+    parser.add_argument('-r', action='store_true', default=False, help="rename files to .jpg after finishing")
+    parser.add_argument('-v', action='store_true', default=False, help="Verbose")
     args = parser.parse_args()
-    if args.s is None:
-        args.s = 10
-    if args.o is None:
-        args.o = 'images/'
 
-    harvester = youTubeHarvester(args.u, args.s, args.o)
+    harvester = youTubeHarvester(args.u, args.s, args.o, args.v)
     harvester.harvestVideo()
     if args.r:
         harvester.reNameFiles()
